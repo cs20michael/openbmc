@@ -942,6 +942,11 @@
 &i2c8 {
 	status = "okay";
 
+	eeprom@50 {
+		compatible = "eeprom";
+		reg = <0x50>;
+	};
+
 	psu@58 {
 		compatible = "pmbus";
 		reg = <0x58>;

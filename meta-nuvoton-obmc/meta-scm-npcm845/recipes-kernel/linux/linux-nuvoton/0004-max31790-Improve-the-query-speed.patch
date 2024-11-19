@@ -1,0 +1,169 @@
+From 37ad7490879149d3c13a64aaaf08ba2d4e039eeb Mon Sep 17 00:00:00 2001
+From: Michael Chang <hwchang2@nuvoton.com>
+Date: Thu, 14 Nov 2024 09:44:17 +0800
+Subject: [PATCH] driver: hwmon: max31790: Improve the speed query of
+ retrieving fan controller properties.
+
+Signed-off-by: Michael Chang <hwchang2@nuvoton.com>
+---
+ drivers/hwmon/max31790.c | 70 ++++++++++++++++++++++++++++------------
+ 1 file changed, 50 insertions(+), 20 deletions(-)
+
+diff --git a/drivers/hwmon/max31790.c b/drivers/hwmon/max31790.c
+index 20bf5ffadefe..fbd06e14e4de 100644
+--- a/drivers/hwmon/max31790.c
++++ b/drivers/hwmon/max31790.c
+@@ -61,12 +61,9 @@ struct max31790_data {
+ 	/* register values */
+ 	u8 fan_config[NR_CHANNEL];
+ 	u8 fan_dynamics[NR_CHANNEL];
+-	u16 fault_status;
+-	u16 tach[NR_CHANNEL * 2];
+-	u16 pwm[NR_CHANNEL];
+-	u16 target_count[NR_CHANNEL];
+ };
+ 
++#if 0
+ static struct max31790_data *max31790_update_device(struct device *dev)
+ {
+ 	struct max31790_data *data = dev_get_drvdata(dev);
+@@ -134,6 +131,7 @@ static struct max31790_data *max31790_update_device(struct device *dev)
+ 
+ 	return ret;
+ }
++#endif
+ 
+ static const u8 tach_period[8] = { 1, 2, 4, 8, 16, 32, 32, 32 };
+ 
+@@ -163,10 +161,13 @@ static u8 bits_for_tach_period(int rpm)
+ }
+ 
+ static int max31790_read_fan(struct device *dev, u32 attr, int channel,
+-			     long *val)
++		long *val)
+ {
+-	struct max31790_data *data = max31790_update_device(dev);
++	struct max31790_data *data = dev_get_drvdata(dev);
++	struct i2c_client *client = data->client;
+ 	int sr, rpm;
++	int rv;
++	u16 fault_status;
+ 
+ 	if (IS_ERR(data))
+ 		return PTR_ERR(data);
+@@ -174,21 +175,43 @@ static int max31790_read_fan(struct device *dev, u32 attr, int channel,
+ 	switch (attr) {
+ 	case hwmon_fan_input:
+ 		sr = get_tach_period(data->fan_dynamics[channel % NR_CHANNEL]);
+-		if (data->tach[channel] == FAN_COUNT_REG_MAX)
++		rv = i2c_smbus_read_word_swapped(client,
++				MAX31790_REG_TACH_COUNT(channel));
++		if(rv < 0)
++			return ERR_PTR(rv);
++
++		if (rv == FAN_COUNT_REG_MAX)
+ 			rpm = 0;
+ 		else
+-			rpm = RPM_FROM_REG(data->tach[channel], sr);
++			rpm = RPM_FROM_REG(rv, sr);
++
+ 		*val = rpm;
+ 		return 0;
+ 	case hwmon_fan_target:
+ 		sr = get_tach_period(data->fan_dynamics[channel]);
+-		rpm = RPM_FROM_REG(data->target_count[channel], sr);
++		rv = i2c_smbus_read_word_swapped(client,
++				MAX31790_REG_TARGET_COUNT(channel));
++		if(rv < 0)
++			return ERR_PTR(rv);
++
++		rpm = RPM_FROM_REG(rv, sr);
+ 		*val = rpm;
+ 		return 0;
+ 	case hwmon_fan_fault:
+-		mutex_lock(&data->update_lock);
+-		*val = !!(data->fault_status & (1 << channel));
+-		data->fault_status &= ~(1 << channel);
++		rv = i2c_smbus_read_byte_data(client,
++				MAX31790_REG_FAN_FAULT_STATUS1);
++		if(rv < 0)
++			return ERR_PTR(rv);
++
++		fault_status |= rv & 0x3F;
++		rv = i2c_smbus_read_byte_data(client,
++				MAX31790_REG_FAN_FAULT_STATUS2);
++		if(rv < 0)
++			return ERR_PTR(rv);
++
++		fault_status |= (rv & 0x3F) << 6;
++		*val = !!(fault_status & (1 << channel));
++		fault_status &= ~(1 << channel);
+ 		/*
+ 		 * If a fault bit is set, we need to write into one of the fan
+ 		 * configuration registers to clear it. Note that this also
+@@ -196,11 +219,13 @@ static int max31790_read_fan(struct device *dev, u32 attr, int channel,
+ 		 */
+ 		if (*val) {
+ 			int reg = MAX31790_REG_TARGET_COUNT(channel % NR_CHANNEL);
++			rv = i2c_smbus_read_word_swapped(client, reg);
++			if(rv < 0)
++				return ERR_PTR(rv);
+ 
+-			i2c_smbus_write_byte_data(data->client, reg,
+-						  data->target_count[channel % NR_CHANNEL] >> 8);
++			i2c_smbus_write_byte_data(client, reg,
++					rv >> 8);
+ 		}
+-		mutex_unlock(&data->update_lock);
+ 		return 0;
+ 	case hwmon_fan_enable:
+ 		*val = !!(data->fan_config[channel] & MAX31790_FAN_CFG_TACH_INPUT_EN);
+@@ -210,6 +235,7 @@ static int max31790_read_fan(struct device *dev, u32 attr, int channel,
+ 	}
+ }
+ 
++
+ static int max31790_write_fan(struct device *dev, u32 attr, int channel,
+ 			      long val)
+ {
+@@ -240,11 +266,9 @@ static int max31790_write_fan(struct device *dev, u32 attr, int channel,
+ 		target_count = RPM_TO_REG(val, sr);
+ 		target_count = clamp_val(target_count, 0x1, 0x7FF);
+ 
+-		data->target_count[channel] = target_count << 5;
+-
+ 		err = i2c_smbus_write_word_swapped(client,
+ 					MAX31790_REG_TARGET_COUNT(channel),
+-					data->target_count[channel]);
++					target_count << 5);
+ 		break;
+ 	case hwmon_fan_enable:
+ 		fan_config = data->fan_config[channel];
+@@ -302,8 +326,10 @@ static umode_t max31790_fan_is_visible(const void *_data, u32 attr, int channel)
+ static int max31790_read_pwm(struct device *dev, u32 attr, int channel,
+ 			     long *val)
+ {
+-	struct max31790_data *data = max31790_update_device(dev);
++	struct max31790_data *data = dev_get_drvdata(dev);
++	struct i2c_client *client = data->client;
+ 	u8 fan_config;
++	int rv;
+ 
+ 	if (IS_ERR(data))
+ 		return PTR_ERR(data);
+@@ -312,7 +338,11 @@ static int max31790_read_pwm(struct device *dev, u32 attr, int channel,
+ 
+ 	switch (attr) {
+ 	case hwmon_pwm_input:
+-		*val = data->pwm[channel] >> 8;
++		rv = i2c_smbus_read_word_swapped(client, MAX31790_REG_PWM_DUTY_CYCLE(channel));
++		if(rv < 0)
++			return ERR_PTR(rv);
++
++		*val = rv >> 8;
+ 		return 0;
+ 	case hwmon_pwm_enable:
+ 		if (fan_config & MAX31790_FAN_CFG_CTRL_MON)
+-- 
+2.34.1
+

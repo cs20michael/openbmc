@@ -1,0 +1,27 @@
+From cb9cc07ec3043c789f3366187eb0f8434376fd4b Mon Sep 17 00:00:00 2001
+From: Michael Chang <hwchang2@nuvoton.com>
+Date: Tue, 12 Nov 2024 13:07:19 +0800
+Subject: [PATCH 1/1] driver: i2c:i2c-core-base: delay 50 us for intel LTPI 2.0 idle time.
+
+Signed-off-by: Michael Chang <hwchang2@nuvoton.com>
+---
+ drivers/i2c/i2c-core-base.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/i2c/i2c-core-base.c b/drivers/i2c/i2c-core-base.c
+index c44ce194a569..cee863490c51 100644
+--- a/drivers/i2c/i2c-core-base.c
++++ b/drivers/i2c/i2c-core-base.c
+@@ -2142,6 +2142,9 @@ int __i2c_transfer(struct i2c_adapter *adap, struct i2c_msg *msgs, int num)
+ 	/* Retry automatically on arbitration loss */
+ 	orig_jiffies = jiffies;
+ 	for (ret = 0, try = 0; try <= adap->retries; try++) {
++		
++		udelay(50);
++
+ 		if (i2c_in_atomic_xfer_mode() && adap->algo->master_xfer_atomic)
+ 			ret = adap->algo->master_xfer_atomic(adap, msgs, num);
+ 		else
+-- 
+2.34.1
+
