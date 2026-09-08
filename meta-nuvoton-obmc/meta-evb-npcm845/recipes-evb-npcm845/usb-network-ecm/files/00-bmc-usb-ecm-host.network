@@ -1,0 +1,13 @@
+# Install on the "host" side at /etc/systemd/network/00-bmc-usb-ecm-host.network
+# Statically assigns 192.168.7.2/24 to the BMC's CDC ECM gadget interface,
+# matched by MAC address so it applies regardless of interface naming/order.
+
+[Match]
+MACAddress=02:00:55:66:77:88
+
+[Network]
+Address=192.168.7.2/24
+LinkLocalAddressing=no
+IPv6AcceptRA=no
+ConfigureWithoutCarrier=yes
+RequiredForOnline=no

@@ -9,7 +9,8 @@ SRC_URI += "file://usb_network_ecm.sh \
            file://usb_network_ecm.service \
            file://00-bmc-ecm0-override.network \
            file://10-bmc-usb-ecm.link \
-           file://99-bmc-usb-network.rules \
+           file://10-bmc-usb-ecm-host.link \
+           file://00-bmc-usb-ecm-host.network \
            "
 
 S = "${UNPACKDIR}"
@@ -23,12 +24,11 @@ do_install() {
 
     install -d ${D}${sysconfdir}/systemd/network/
     install -m 0644 ${UNPACKDIR}/00-bmc-ecm0-override.network ${D}${sysconfdir}/systemd/network
+    install -m 0644 ${UNPACKDIR}/00-bmc-usb-ecm-host.network ${D}${sysconfdir}/systemd/network
 
     install -d ${D}${base_libdir}/systemd/network/
     install -m 0644 ${UNPACKDIR}/10-bmc-usb-ecm.link ${D}${base_libdir}/systemd/network
-
-    install -d ${D}${sysconfdir}/udev/rules.d/
-    install -m 0644 ${UNPACKDIR}/99-bmc-usb-network.rules ${D}${sysconfdir}/udev/rules.d
+    install -m 0644 ${UNPACKDIR}/10-bmc-usb-ecm-host.link ${D}${base_libdir}/systemd/network
 }
 
 NATIVE_SYSTEMD_SUPPORT = "1"
@@ -36,6 +36,8 @@ SYSTEMD_PACKAGES = "${PN}"
 SYSTEMD_SERVICE:${PN} = "usb_network_ecm.service"
 FILES:${PN} += "${sysconfdir}/systemd/network/00-bmc-ecm0-override.network"
 FILES:${PN} += "${base_libdir}/systemd/network/10-bmc-usb-ecm.link"
-FILES:${PN} += "${sysconfdir}/udev/rules.d/99-bmc-usb-network.rules"
+
+FILES:${PN} += "${sysconfdir}/systemd/network/00-bmc-usb-ecm-host.network"
+FILES:${PN} += "${base_libdir}/systemd/network/10-bmc-usb-ecm-host.link"
 
 inherit allarch systemd

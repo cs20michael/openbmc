@@ -1,0 +1,13 @@
+# 10-bmc-usb-ecm-host.link
+# Install on HOST side at /etc/systemd/network/10-bmc-usb-ecm-host.link
+#
+# Renames the BMC's CDC ECM gadget interface, as seen by this host, to a
+# stable name by matching the host-side MAC address (host_addr set in
+# usb_network_ecm.sh on the BMC).
+
+[Match]
+MACAddress=02:00:55:66:77:88
+Type=ether
+
+[Link]
+Name=bmc-usb-ecm
